@@ -1,82 +1,27 @@
-import { useEffect, useState } from "react";
-import { Routes, Route } from "react-router-dom";
-import { useAuth } from "@clerk/react";
+import { Navigate, Route, Routes } from "react-router-dom";
 
-import { ProtectedRoute } from "./lib/protectedRoute";
+import { APP_ROUTES } from "@/config/app.routes";
+import LoginPage from "@/modules/auth/pages/login";
+import { ProtectedRoute } from "@/modules/auth/components/protected-route";
+import PanelLayout from "@/modules/panel/components/panel-layout";
+import PanelHomePage from "@/modules/panel/pages/panel-home.page";
+import ProductsPage from "@/modules/products/pages/products.page";
+import CategoriesPage from "@/modules/product-categories/pages/categories.page";
+import TapPage from "@/modules/tap/pages/tap.page";
 
-import LoginPage from "./modules/auth/pages/login";
-import { setupApiInterceptors } from "./lib/interceptor";
-import ShowUsers from "./modules/users/pages/showUsers.page";
-import { APP_ROUTES } from "./config/app.routes";
-import HomePage from "./modules/home/pages/Panelhome.page";
-import PanelLayout from "./components/layout/panelLayout";
-import { UnauthorizedPage } from "./modules/auth/pages/unauthorized.page";
-import { InactiveAccountPage } from "./modules/auth/pages/inactiveAccount.page";
-
-import { USER_ROLES } from "./config/const.globs";
-import AppLayout from "./components/layout/appLayout";
-import AppHomePage from "./modules/home/pages/appHome.page";
-
-function App() {
-  const { getToken, isLoaded } = useAuth();
-  const [isApiReady, setIsApiReady] = useState(false);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-
-    const cleanup = setupApiInterceptors(getToken);
-
-    setIsApiReady(true);
-
-    return cleanup;
-  }, [isLoaded, getToken]);
-
-  if (!isLoaded || !isApiReady) {
-    return <div>Cargando...</div>;
-  }
-
+export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<LoginPage />} />
-
-      <Route path={APP_ROUTES.auth.login} element={<LoginPage />} />
-
-      <Route
-        path={APP_ROUTES.auth.unauthorized}
-        element={<UnauthorizedPage />}
-      />
-
-      <Route
-        path={APP_ROUTES.auth.inactive}
-        element={<InactiveAccountPage />}
-      />
-
-      <Route
-        path={APP_ROUTES.panel.root}
-        element={
-          <ProtectedRoute allowedRoles={[USER_ROLES.ADMIN, USER_ROLES.SUPERADMIN]}>
-            <PanelLayout />
-          </ProtectedRoute>
-        }
-      >
-        <Route index element={<HomePage />} />
-
-        <Route path={APP_ROUTES.panel.users} element={<ShowUsers />} />
+      <Route path={APP_ROUTES.tap.root} element={<TapPage />} />
+      <Route path={`${APP_ROUTES.auth.login}/*`} element={<LoginPage />} />
+      <Route element={<ProtectedRoute />}>
+        <Route path={APP_ROUTES.panel.root} element={<PanelLayout />}>
+          <Route index element={<PanelHomePage />} />
+          <Route path={APP_ROUTES.panel.products} element={<ProductsPage />} />
+          <Route path={APP_ROUTES.panel.categories} element={<CategoriesPage />} />
+        </Route>
       </Route>
-
-      <Route
-        path={APP_ROUTES.app.root}
-        element={
-          <ProtectedRoute allowedRoles={[USER_ROLES.CITIZEN]}>
-            <AppLayout />
-          </ProtectedRoute>
-        }
-      >
-        <Route index element={<AppHomePage />} />
-        
-      </Route>
+      <Route path="*" element={<Navigate to={APP_ROUTES.panel.root} replace />} />
     </Routes>
   );
 }
-
-export default App;

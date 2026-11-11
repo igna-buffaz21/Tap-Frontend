@@ -1,0 +1,73 @@
+.epc-scanner-grid {
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 14px 14px;
+  mask-image: radial-gradient(ellipse, black 35%, transparent 75%);
+}
+
+.epc-scanner-chip {
+  color: var(--muted-foreground);
+  transition: color 350ms ease;
+}
+
+.epc-wave {
+  opacity: 0.12;
+}
+
+.epc-scanner-led {
+  color: var(--muted-foreground);
+}
+
+.epc-scanner-beam {
+  opacity: 0;
+  transform: translateY(32px);
+}
+
+.epc-scanner[data-reading="true"] .epc-scanner-chip {
+  color: var(--foreground);
+}
+
+.epc-scanner[data-reading="true"] .epc-wave {
+  animation: epc-radio-wave 1.8s ease-in-out infinite;
+}
+
+.epc-scanner[data-reading="true"] .epc-wave-two {
+  animation-delay: 200ms;
+}
+
+.epc-scanner[data-reading="true"] .epc-wave-three {
+  animation-delay: 400ms;
+}
+
+.epc-scanner[data-reading="true"] .epc-scanner-led {
+  color: #10b981;
+  animation: epc-radio-wave 1s ease-in-out infinite;
+}
+
+.epc-scanner[data-reading="true"] .epc-scanner-beam {
+  animation: epc-scan-sweep 2.4s ease-in-out infinite;
+}
+
+@keyframes epc-radio-wave {
+  0%, 100% { opacity: 0.15; }
+  45%, 60% { opacity: 1; }
+}
+
+@keyframes epc-scan-sweep {
+  0% { opacity: 0; transform: translateY(32px); }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(208px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .epc-scanner[data-reading="true"] .epc-wave,
+  .epc-scanner[data-reading="true"] .epc-scanner-led,
+  .epc-scanner[data-reading="true"] .epc-scanner-beam {
+    animation: none;
+    opacity: 1;
+  }
+
+  .epc-scanner[data-reading="true"] .epc-scanner-beam {
+    transform: translateY(120px);
+  }
+}

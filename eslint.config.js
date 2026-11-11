@@ -20,4 +20,12 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    files: ['src/components/ui/sidebar.tsx'],
+    rules: {
+      'react-refresh/only-export-components': ['error', {
+        allowExportNames: ['useSidebar'],
+      }],
+    },
+  },
 ])

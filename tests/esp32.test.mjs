@@ -14,6 +14,52 @@ registerHooks({
 const { esp32Service } = await import("../src/modules/esp32/esp32.service.ts");
 afterEach(() => mock.restoreAll());
 
+test("ejecuta run-flow con un único POST autenticado sin body y conserva productos, precios y EPC", async () => {
+  const response = {
+    products: [
+      { epc: "CAFE00000001000000000002", product: { id: "12", name: "Café", sale_price: "2500.0000" } },
+      { epc: "CAFE00000001000000000003", product: { id: "12", name: "Café", sale_price: "2500.0000" } },
+    ],
+    total: 2,
+    door: "open",
+  };
+  const controller = new AbortController();
+  const fetchMock = mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url, "/esp32/run-flow");
+    assert.equal(options.method, "POST");
+    assert.deepEqual(options.headers, { Authorization: "Bearer clerk-token" });
+    assert.equal(options.body, undefined);
+    assert.equal(options.signal, controller.signal);
+    return Response.json(response);
+  });
+  assert.deepEqual(await esp32Service.runFlow("clerk-token", controller.signal), response);
+  assert.equal(fetchMock.mock.callCount(), 1);
+});
+
+test("run-flow conserva un carrito vacío", async () => {
+  const response = { products: [], total: 0, door: "open" };
+  mock.method(globalThis, "fetch", async () => Response.json(response));
+  assert.deepEqual(await esp32Service.runFlow("clerk-token"), response);
+});
+
+test("run-flow sin sesión no envía órdenes al hardware", async () => {
+  const fetchMock = mock.method(globalThis, "fetch");
+  await assert.rejects(esp32Service.runFlow(""), { status: 401 });
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("run-flow informa lector ocupado y fallos del hardware sin reintentar", async () => {
+  for (const [status, message] of [
+    [409, "El lector está ocupado. Esperá unos segundos y volvé a intentar."],
+    [503, "No se pudo completar el recorrido. Revisá la conexión del ESP32 y volvé a intentar."],
+  ]) {
+    const fetchMock = mock.method(globalThis, "fetch", async () => Response.json({ message: "Error" }, { status }));
+    await assert.rejects(esp32Service.runFlow("clerk-token"), { status, message });
+    assert.equal(fetchMock.mock.callCount(), 1);
+    mock.restoreAll();
+  }
+});
+
 test("lee una etiqueta mediante un único POST autenticado sin body ni parámetros", async () => {
   const response = { found: true, tag: { epc: "E2000017221101441890ABCD", antenna: 4, rssiRaw: 100 } };
   const controller = new AbortController();

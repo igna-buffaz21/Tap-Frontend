@@ -8,16 +8,18 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ApiError, errorMessage } from "@/lib/api";
 import { esp32Service } from "@/modules/esp32/esp32.service";
 import type { EpcTag } from "@/modules/esp32/esp32.types";
+import { productIdentificationsService } from "@/modules/product-identifications/product-identifications.service";
 import type { Product } from "../products.types";
 import { EpcScanner } from "./epc-scanner";
 
-export function IdentifyProductDialog({ product, onClose, onDetected }: {
+export function IdentifyProductDialog({ product, onClose, onAssigned }: {
   product: Product;
   onClose: () => void;
-  onDetected: (tag: EpcTag) => void;
+  onAssigned: (tag: EpcTag) => void;
 }) {
   const { getToken } = useAuth();
   const [reading, setReading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
@@ -42,8 +44,14 @@ export function IdentifyProductDialog({ product, onClose, onDetected }: {
         if (!result.tag?.epc?.trim()) {
           throw new ApiError("El lector no devolvió un EPC válido. Volvé a intentar.", 502);
         }
-        console.log("[ESP32] Etiqueta leída:", result.tag);
-        onDetected(result.tag);
+        setSaving(true);
+        await productIdentificationsService.create(token ?? "", {
+          product_id: product.id,
+          type: "RFID_UHF",
+          value: result.tag.epc.trim(),
+        }, controller.signal);
+        if (controller.signal.aborted) return;
+        onAssigned({ ...result.tag, epc: result.tag.epc.trim() });
         onClose();
       } else {
         setNotice("No se detectó una única etiqueta. Acercá solo una etiqueta a la antena y volvé a intentar.");
@@ -51,7 +59,10 @@ export function IdentifyProductDialog({ product, onClose, onDetected }: {
     } catch (error) {
       if (!controller.signal.aborted) setError(errorMessage(error));
     } finally {
-      if (!controller.signal.aborted) setReading(false);
+      if (!controller.signal.aborted) {
+        setReading(false);
+        setSaving(false);
+      }
       if (request.current === controller) request.current = null;
     }
   }
@@ -67,13 +78,13 @@ export function IdentifyProductDialog({ product, onClose, onDetected }: {
         <div className="rounded-xl border bg-muted/20 px-4 py-5" aria-busy={reading}>
           <div className="flex items-center justify-center gap-2 text-[10px] font-medium tracking-[0.18em] text-muted-foreground">
             <span className={`size-1.5 rounded-full ${reading ? "bg-emerald-500 motion-safe:animate-pulse" : "bg-muted-foreground/50"}`} />
-            {reading ? "LECTURA EN CURSO" : "LECTOR EPC"}
+            {saving ? "ASIGNACIÓN EN CURSO" : reading ? "LECTURA EN CURSO" : "LECTOR EPC"}
           </div>
-          <EpcScanner reading={reading} />
+          <EpcScanner reading={reading && !saving} />
           <div className="space-y-1 text-center" role="status" aria-live="polite">
-            <p className="text-sm font-medium">{reading ? "Buscando una etiqueta..." : "Acercá una sola etiqueta a la antena"}</p>
+            <p className="text-sm font-medium">{saving ? "Asignando etiqueta al producto..." : reading ? "Buscando una etiqueta..." : "Acercá una sola etiqueta a la antena"}</p>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              {reading ? "Mantenela cerca. La lectura puede tardar entre 5 y 10 segundos." : "Cuando esté lista, presioná Leer EPC para comenzar."}
+              {saving ? "La lectura fue correcta. Guardando el identificador RFID UHF." : reading ? "Mantenela cerca. La lectura puede tardar entre 5 y 10 segundos." : "Cuando esté lista, presioná Leer EPC para comenzar."}
             </p>
           </div>
         </div>
@@ -85,7 +96,7 @@ export function IdentifyProductDialog({ product, onClose, onDetected }: {
           <Button variant="outline" disabled={reading} onClick={onClose}>Cerrar</Button>
           <Button disabled={reading} onClick={() => void readEpc()}>
             {reading ? <Loader2Icon className="motion-safe:animate-spin" aria-hidden="true" /> : <RadioIcon aria-hidden="true" />}
-            {reading ? "Leyendo EPC..." : "Leer EPC"}
+            {saving ? "Asignando..." : reading ? "Leyendo EPC..." : "Leer EPC"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -53,11 +53,11 @@ export default function ProductsPage() {
     </div>
     <p role="status" className="text-sm text-muted-foreground">{message || status.message}</p>
     {lastRead && <div role="status" className="space-y-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950">
-      <p className="text-sm font-medium">Etiqueta leída para {lastRead.productName}</p>
+      <p className="text-sm font-medium">Etiqueta asignada a {lastRead.productName}</p>
       <code className="block break-all text-sm">{lastRead.tag.epc}</code>
-      <p className="text-xs text-muted-foreground">Lectura completada. La identificación todavía no se guardó.</p>
+      <p className="text-xs text-muted-foreground">Identificador RFID UHF guardado correctamente.</p>
     </div>}
-    {identifyingProduct && <IdentifyProductDialog product={identifyingProduct} onClose={() => setIdentifyingProduct(null)} onDetected={(tag) => setLastRead({ productName: identifyingProduct.name, tag })} />}
+    {identifyingProduct && <IdentifyProductDialog product={identifyingProduct} onClose={() => setIdentifyingProduct(null)} onAssigned={(tag) => setLastRead({ productName: identifyingProduct.name, tag })} />}
     {dialog && <ProductDialog product={dialog.product} categories={categories.items} onClose={() => setDialog(null)} onSaved={(product) => { products.upsert(product); setMessage(dialog.product ? "Producto actualizado." : "Producto creado."); }} />}
   </section>;
 }

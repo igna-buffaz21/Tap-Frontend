@@ -20,7 +20,8 @@ export default function TapPage() {
   const [error, setError] = useState<string | null>(null);
   const [paid, setPaid] = useState(false);
   const request = useRef<AbortController | null>(null);
-  const total = (result?.products.reduce((sum, { product }) => sum + Math.round(Number(product.sale_price) * 100), 0) ?? 0) / 100;
+  const hasUnidentifiedProducts = result?.products.some(({ product }) => product === null) ?? false;
+  const total = (result?.products.reduce((sum, { product }) => sum + (product ? Math.round(Number(product.sale_price) * 100) : 0), 0) ?? 0) / 100;
 
   useEffect(() => () => request.current?.abort(), []);
 
@@ -95,8 +96,8 @@ export default function TapPage() {
                   {result.products.map(({ epc, product }, index) => (
                     <li key={`${epc}-${index}`} className="flex items-start gap-4 py-5">
                       <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-sm font-medium tabular-nums">{String(index + 1).padStart(2, "0")}</span>
-                      <div className="min-w-0 flex-1 space-y-1"><p className="break-words text-sm font-medium">{product.name}</p><code className="block break-all text-xs text-muted-foreground">EPC: {epc}</code><p className="text-sm font-medium tabular-nums sm:hidden">{money.format(Number(product.sale_price))}</p></div>
-                      <p className="hidden shrink-0 text-sm font-medium tabular-nums sm:block">{money.format(Number(product.sale_price))}</p>
+                      <div className="min-w-0 flex-1 space-y-1"><p className="break-words text-sm font-medium">{product?.name ?? "Producto no identificado"}</p><code className="block break-all text-xs text-muted-foreground">EPC: {epc}</code><p className="text-sm font-medium tabular-nums sm:hidden">{product ? money.format(Number(product.sale_price)) : "Precio no disponible"}</p></div>
+                      <p className="hidden shrink-0 text-sm font-medium tabular-nums sm:block">{product ? money.format(Number(product.sale_price)) : "Precio no disponible"}</p>
                     </li>
                   ))}
                 </ul>
@@ -112,9 +113,10 @@ export default function TapPage() {
             <section className="min-w-0 rounded-3xl border bg-background p-6 sm:p-8" aria-labelledby="payment-title">
               <p className="mb-2 text-xs font-medium tracking-widest text-muted-foreground">02 / PAGO</p>
               <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="payment-title" className="text-xl font-semibold">Resumen de pago</h2><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200">Simulación</span></div>
-              <div className="my-8 flex flex-wrap items-end justify-between gap-4 border-y py-6"><span className="text-sm text-muted-foreground">Total</span><span className="break-all text-3xl font-semibold tracking-tight tabular-nums">{money.format(total)}</span></div>
+              <div className="my-8 flex flex-wrap items-end justify-between gap-4 border-y py-6"><span className="text-sm text-muted-foreground">Total</span><span className="break-all text-3xl font-semibold tracking-tight tabular-nums">{hasUnidentifiedProducts ? "Pendiente" : money.format(total)}</span></div>
+              {hasUnidentifiedProducts && <p role="status" className="mb-6 text-sm text-destructive">Hay etiquetas sin un producto asociado. Revisá sus EPC e iniciá una nueva lectura antes de pagar.</p>}
               <div className="mb-6 flex items-center gap-3 rounded-xl border bg-muted/20 p-4"><CreditCardIcon className="size-5 text-muted-foreground" aria-hidden="true" /><div><p className="text-sm font-medium">Pago de prueba</p><p className="text-xs text-muted-foreground">Sin ingresar datos de una tarjeta.</p></div></div>
-              <Button className="w-full" size="lg" disabled={paid || result.products.length === 0} onClick={() => setPaid(true)}>
+              <Button className="w-full" size="lg" disabled={paid || hasUnidentifiedProducts || result.products.length === 0} onClick={() => setPaid(true)}>
                 {paid ? <CheckIcon aria-hidden="true" /> : <CreditCardIcon aria-hidden="true" />}{paid ? "Pago simulado completado" : "Simular pago"}
               </Button>
               <p className="mt-3 text-center text-xs leading-relaxed text-muted-foreground">Esta prueba no realiza ningún cobro.</p>

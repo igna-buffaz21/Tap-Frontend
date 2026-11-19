@@ -15,7 +15,7 @@ export interface RunFlowResponse {
       id: string;
       name: string;
       sale_price: string;
-    };
+    } | null;
   }[];
   total: number;
   door: "open" | "closed";

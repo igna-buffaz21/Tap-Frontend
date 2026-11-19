@@ -1,51 +1,40 @@
 import { useAuth } from "@clerk/react";
-import { ArrowRightIcon, CheckIcon, CreditCardIcon, Loader2Icon, RadioIcon, ShoppingBagIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowRightIcon, CheckIcon, CreditCardIcon, RadioIcon, ShoppingBagIcon, ShoppingCartIcon, ShieldCheckIcon } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { ErrorNotice } from "@/components/catalog/catalog-controls";
 import { Button } from "@/components/ui/button";
 import { APP_ROUTES } from "@/config/app.routes";
-import { errorMessage } from "@/lib/api";
-import { esp32Service } from "@/modules/esp32/esp32.service";
-import type { RunFlowResponse } from "@/modules/esp32/esp32.types";
 import { EpcScanner } from "@/modules/products/components/epc-scanner";
+
+import { useTapFlow } from "./use-tap-flow";
+import "./tap.css";
 
 const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
 
 export default function TapPage() {
   const { getToken, isLoaded, isSignedIn } = useAuth();
-  const [reading, setReading] = useState(false);
-  const [result, setResult] = useState<RunFlowResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [paid, setPaid] = useState(false);
-  const request = useRef<AbortController | null>(null);
+  const { sensor, stage, reading, result, error, connection, countdown } = useTapFlow(Boolean(isLoaded && isSignedIn), getToken);
+  const [paidResult, setPaidResult] = useState<typeof result>(null);
+  const paid = result !== null && paidResult === result;
+  const detected = sensor?.detected === true;
+  const active = reading || (sensor?.busy && !result);
+  const stageCopy = {
+    opening: ["Carrito detectado", "Estamos preparando la cámara. Retirá las manos de la puerta."],
+    waitingForObject: ["Ingresá el carrito hasta el fondo de la cámara", "El sensor iniciará la lectura automáticamente."],
+    holding: ["Carrito detectado", "Retirá las manos. La puerta se cerrará automáticamente."],
+    closing: ["Cerrando la puerta", "Mantené las manos fuera de la cámara."],
+    reading: ["Leyendo productos", "Estamos identificando los productos de tu carrito. Esperá un momento."],
+    reopening: ["Lectura finalizada", "Estamos abriendo la puerta y preparando tu carrito."],
+    completed: ["Preparando tu carrito", "En un momento vas a poder revisar tus productos y pagar."],
+    failed: ["No pudimos completar la lectura", "Retirá el carrito y volvé a ingresarlo para intentar de nuevo."],
+  };
+  const copy = stage && (active || stage === "failed") ? stageCopy[stage] : detected
+    ? ["Carrito detectado", "Retirá las manos de la cámara. Estamos confirmando la detección."]
+    : ["Ingresá el carrito hasta el fondo de la cámara", "La lectura comienza automáticamente cuando detectamos tu carrito."];
   const hasUnidentifiedProducts = result?.products.some(({ product }) => product === null) ?? false;
   const total = (result?.products.reduce((sum, { product }) => sum + (product ? Math.round(Number(product.sale_price) * 100) : 0), 0) ?? 0) / 100;
-
-  useEffect(() => () => request.current?.abort(), []);
-
-  async function startFlow() {
-    if (request.current) return;
-    const controller = new AbortController();
-    request.current = controller;
-    setReading(true);
-    setResult(null);
-    setError(null);
-    setPaid(false);
-
-    try {
-      const token = await getToken();
-      if (controller.signal.aborted) return;
-      const response = await esp32Service.runFlow(token ?? "", controller.signal);
-      if (!controller.signal.aborted) setResult(response);
-    } catch (error) {
-      if (!controller.signal.aborted) setError(errorMessage(error));
-    } finally {
-      if (!controller.signal.aborted) setReading(false);
-      if (request.current === controller) request.current = null;
-    }
-  }
 
   return (
     <main className="min-h-svh bg-muted/30 px-4 py-6 sm:px-8 sm:py-10">
@@ -60,28 +49,29 @@ export default function TapPage() {
 
         {error && <ErrorNotice message={error} />}
 
-        {reading || !result ? (
-          <section className="flex min-h-[60svh] flex-col items-center justify-center rounded-3xl border bg-background px-6 py-10 text-center" aria-busy={reading}>
+        {active || !result ? (
+          <section className="tap-stage flex min-h-[65svh] flex-col items-center justify-center rounded-3xl border bg-background px-6 py-10 text-center" aria-busy={Boolean(active)}>
             <span className="flex items-center gap-2 text-xs font-medium tracking-widest text-muted-foreground">
-              <span className={`size-2 rounded-full ${reading ? "bg-emerald-500 motion-safe:animate-pulse" : "bg-muted-foreground/50"}`} />
-              {reading ? "LECTURA EN CURSO" : "LISTO PARA COMENZAR"}
+              <span className={`size-2 rounded-full ${connection === "Sensor conectado" ? "bg-emerald-500 motion-safe:animate-pulse" : "bg-amber-500"}`} />
+              {isSignedIn ? connection : "Iniciá sesión para conectar el sensor"}
             </span>
-            <EpcScanner reading={reading} />
-            <div className="max-w-md space-y-3" role="status" aria-live="polite">
-              <h2 className="text-2xl font-semibold tracking-tight">{reading ? "Estamos leyendo tus productos" : "Comencemos tu compra"}</h2>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {reading ? "Colocá tus productos cuando se abra la puerta. El ciclo espera 10 segundos, cierra la puerta y realiza la lectura durante 5 segundos antes de volver a abrirla." : "Iniciá la lectura y colocá tus productos cuando se abra la puerta. Al finalizar, vas a poder revisar tu carrito."}
-              </p>
+            {stage === "reading" ? <EpcScanner reading /> : (
+              <div className="tap-chamber my-8" data-detected={detected || Boolean(active)} data-closed={stage === "closing"} aria-hidden="true">
+                <div className="tap-chamber-floor" />
+                <ShoppingCartIcon className="tap-cart" strokeWidth={1.4} />
+                <div className="tap-chamber-door" />
+                {(detected || active) && <span className="tap-detection"><CheckIcon className="size-5" /></span>}
+              </div>
+            )}
+            <div className="max-w-lg space-y-3" role="status" aria-live="polite">
+              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">{copy[0]}</h2>
+              <p className="text-base leading-relaxed text-muted-foreground">{copy[1]}</p>
+              {stage === "holding" && <div className="pt-3"><span key={countdown} className="tap-countdown inline-flex size-20 items-center justify-center rounded-full bg-amber-100 text-4xl font-semibold text-amber-900">{countdown > 0 ? countdown : <ShieldCheckIcon className="size-8" />}</span><p className="mt-3 text-sm font-medium">{countdown > 0 ? `La puerta se cerrará en ${countdown} ${countdown === 1 ? "segundo" : "segundos"}` : "Esperando el cierre de la puerta"}</p></div>}
             </div>
-            <div className="mt-7">
+            <div className="mt-8">
               {!isLoaded ? <p className="text-sm text-muted-foreground">Cargando sesión...</p> : !isSignedIn ? (
                 <Button asChild><Link to={APP_ROUTES.auth.login}>Iniciar sesión para comenzar<ArrowRightIcon aria-hidden="true" /></Link></Button>
-              ) : (
-                <Button size="lg" disabled={reading} onClick={() => void startFlow()}>
-                  {reading ? <Loader2Icon className="motion-safe:animate-spin" aria-hidden="true" /> : <RadioIcon aria-hidden="true" />}
-                  {reading ? "Leyendo productos..." : error ? "Volver a intentar" : "Iniciar lectura"}
-                </Button>
-              )}
+              ) : <div className="flex flex-wrap justify-center gap-3 text-xs text-muted-foreground">{["1 · Ingresá el carrito", "2 · Lectura automática", "3 · Revisá y pagá"].map((step, index) => <span key={step} className={`rounded-full border px-3 py-2 ${index === (active ? 1 : 0) ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : ""}`}>{step}</span>)}</div>}
             </div>
           </section>
         ) : (
@@ -106,7 +96,7 @@ export default function TapPage() {
               )}
               <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-6 py-4">
                 <p role="status" className="text-xs text-muted-foreground">Lectura completada · Puerta {result.door === "open" ? "abierta" : "cerrada"}</p>
-                <Button variant="outline" size="sm" onClick={() => void startFlow()}><RadioIcon aria-hidden="true" />Nueva lectura</Button>
+                <span className="flex items-center gap-2 text-xs text-muted-foreground"><RadioIcon className="size-4" aria-hidden="true" />Retirá y volvé a ingresar el carrito para otra lectura</span>
               </div>
             </section>
 
@@ -115,8 +105,13 @@ export default function TapPage() {
               <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="payment-title" className="text-xl font-semibold">Resumen de pago</h2><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200">Simulación</span></div>
               <div className="my-8 flex flex-wrap items-end justify-between gap-4 border-y py-6"><span className="text-sm text-muted-foreground">Total</span><span className="break-all text-3xl font-semibold tracking-tight tabular-nums">{hasUnidentifiedProducts ? "Pendiente" : money.format(total)}</span></div>
               {hasUnidentifiedProducts && <p role="status" className="mb-6 text-sm text-destructive">Hay etiquetas sin un producto asociado. Revisá sus EPC e iniciá una nueva lectura antes de pagar.</p>}
+              <div className="mb-6 flex flex-col items-center gap-3 rounded-2xl border bg-muted/20 p-5">
+                <DemoQr />
+                <p className="text-sm font-medium">Escaneá para pagar</p>
+                <p className="max-w-60 text-center text-xs text-muted-foreground">QR de demostración. Usá el botón para simular el pago.</p>
+              </div>
               <div className="mb-6 flex items-center gap-3 rounded-xl border bg-muted/20 p-4"><CreditCardIcon className="size-5 text-muted-foreground" aria-hidden="true" /><div><p className="text-sm font-medium">Pago de prueba</p><p className="text-xs text-muted-foreground">Sin ingresar datos de una tarjeta.</p></div></div>
-              <Button className="w-full" size="lg" disabled={paid || hasUnidentifiedProducts || result.products.length === 0} onClick={() => setPaid(true)}>
+              <Button className="w-full" size="lg" disabled={paid || hasUnidentifiedProducts || result.products.length === 0} onClick={() => setPaidResult(result)}>
                 {paid ? <CheckIcon aria-hidden="true" /> : <CreditCardIcon aria-hidden="true" />}{paid ? "Pago simulado completado" : "Simular pago"}
               </Button>
               <p className="mt-3 text-center text-xs leading-relaxed text-muted-foreground">Esta prueba no realiza ningún cobro.</p>
@@ -127,4 +122,24 @@ export default function TapPage() {
       </div>
     </main>
   );
+}
+
+
+function DemoQr() {
+  // Decorative QR pattern only; it contains no payment link or payment data.
+  const size = 29;
+  const finders = [[0, 0], [22, 0], [0, 22]];
+  const cells = [];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const finder = finders.find(([fx, fy]) => x >= fx - 1 && x <= fx + 7 && y >= fy - 1 && y <= fy + 7);
+      let filled;
+      if (finder) {
+        const dx = x - finder[0], dy = y - finder[1];
+        filled = dx >= 0 && dx < 7 && dy >= 0 && dy < 7 && (dx === 0 || dx === 6 || dy === 0 || dy === 6 || (dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4));
+      } else filled = ((x * 17 + y * 31 + x * y * 7) % 11) < 5;
+      if (filled) cells.push(<rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" />);
+    }
+  }
+  return <svg role="img" aria-label="QR simulado de pago, sin validez para realizar cobros" viewBox="-4 -4 37 37" className="size-48 rounded-xl bg-white p-2 text-black"><g fill="currentColor">{cells}</g></svg>;
 }

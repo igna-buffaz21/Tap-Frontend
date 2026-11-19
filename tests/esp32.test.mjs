@@ -108,3 +108,55 @@ test("propaga fallos de conexión", async () => {
   mock.method(globalThis, "fetch", async () => { throw new TypeError("Failed to fetch"); });
   await assert.rejects(esp32Service.readTag("clerk-token"), { message: "Failed to fetch" });
 });
+
+const { readSensorEvents } = await import("../src/modules/esp32/esp32.events.ts");
+
+test("SSE autentica con Bearer, procesa mensajes fragmentados y omite heartbeats", async () => {
+  const encoder = new TextEncoder();
+  const sensor = { detected: true, confirmed: true, ready: true, busy: false };
+  const bytes = encoder.encode(`: conectado\r\nevent: heartbeat\r\ndata: {}\r\n\r\nevent: sensor\r\ndata: ${JSON.stringify(sensor)}\r\n\r\nevent: hardwareError\r\ndata: {"message":"Conexión perdida"}\r\n\r\nevent: flow\r\ndata: {"stage":\r\ndata: "reading"}\r\n\r\n`);
+  const controller = new AbortController();
+  mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url, "/esp32/sensor/events");
+    assert.deepEqual(options.headers, { Authorization: "Bearer clerk-token", Accept: "text/event-stream" });
+    assert.equal(options.signal, controller.signal);
+    assert.equal(options.cache, "no-store");
+    return new Response(new ReadableStream({
+      start(stream) {
+        // A single byte per chunk exercises CRLF and multibyte UTF-8 boundaries.
+        for (const byte of bytes) stream.enqueue(Uint8Array.of(byte));
+        stream.close();
+      },
+    }));
+  });
+  const events = [];
+  let opened = false;
+  await readSensorEvents("clerk-token", controller.signal, (event) => events.push(event), () => { opened = true; });
+  assert.equal(opened, true);
+  assert.deepEqual(events, [
+    { type: "sensor", data: sensor },
+    { type: "hardwareError", data: { message: "Conexión perdida" } },
+    { type: "flow", data: { stage: "reading" } },
+  ]);
+});
+
+test("SSE sin token no abre una conexión y conserva errores de autorización", async () => {
+  const fetchMock = mock.method(globalThis, "fetch", async () => new Response(null, { status: 403 }));
+  await assert.rejects(readSensorEvents("", new AbortController().signal, () => {}), { status: 401 });
+  assert.equal(fetchMock.mock.callCount(), 0);
+  await assert.rejects(readSensorEvents("token", new AbortController().signal, () => {}), { status: 403 });
+});
+
+test("SSE libera el reader cuando el handler corta por un error del hardware", async () => {
+  let cancelled = false;
+  mock.method(globalThis, "fetch", async () => new Response(new ReadableStream({
+    start(stream) {
+      stream.enqueue(new TextEncoder().encode('event: hardwareError\ndata: {"message":"Sin hardware"}\n\n'));
+    },
+    cancel() { cancelled = true; },
+  })));
+  await assert.rejects(readSensorEvents("token", new AbortController().signal, () => {
+    throw new Error("Sin hardware");
+  }), { message: "Sin hardware" });
+  assert.equal(cancelled, true);
+});

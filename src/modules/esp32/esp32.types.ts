@@ -20,3 +20,12 @@ export interface RunFlowResponse {
   total: number;
   door: "open" | "closed";
 }
+
+export interface SensorState {
+  detected: boolean | null;
+  confirmed: boolean;
+  ready: boolean;
+  busy: boolean;
+}
+
+export type FlowStage = "opening" | "waitingForObject" | "holding" | "closing" | "reading" | "reopening" | "completed" | "failed";
